@@ -9,6 +9,7 @@ import 'package:better_player_plus/src/configuration/better_player_buffering_con
 import 'package:better_player_plus/src/video_player/video_player_platform_interface.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:developer' as developer;
 
 final VideoPlayerPlatform _videoPlayerPlatform = VideoPlayerPlatform.instance
   // This will clear all open videos on the platform when a full restart is
@@ -202,38 +203,84 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     unawaited(_applyVolume());
 
     void eventListener(VideoEvent event) {
+      // *** NEW LOG ***
+      developer.log(
+        "======== video_player.dart: eventListener received event: ${event.eventType} ==============",
+        name: "VideoPlayerController",
+      );
+
       if (_isDisposed) {
+        developer.log(
+          "============ video_player.dart: isDisposed. Ignoring event.====================",
+          name: "VideoPlayerController",
+        );
         return;
       }
+
+      // *** NEW LOG ***
+      // This log confirms the event has all the data *before* being sent.
+      if (event.eventType == VideoEventType.tracksChanged) {
+        developer.log(
+          "================ video_player.dart: Event is tracksChanged. Data: "
+          "========== Video: ${event.videoTracks?.length ?? 0}, ==============="
+          "=========Audio: ${event.audioTracks?.length ?? 0}, =============="
+          "=============Subtitle: ${event.subtitleTracks?.length ?? 0} ====================",
+          name: "VideoPlayerController",
+        );
+      }
+
       videoEventStreamController.add(event);
+
+      // *** NEW LOG ***
+      developer.log(
+        "============video_player.dart: Event added to stream. Processing switch.=============",
+        name: "VideoPlayerController",
+      );
+
       switch (event.eventType) {
         case VideoEventType.initialized:
           value = value.copyWith(duration: event.duration, size: event.size);
           _initializingCompleter.complete(null);
           _applyPlayPause();
+          break; // <-- Make sure all cases have a 'break'
         case VideoEventType.completed:
           value = value.copyWith(isPlaying: false, position: value.duration);
           _timer?.cancel();
+          break;
         case VideoEventType.bufferingUpdate:
           value = value.copyWith(buffered: event.buffered);
+          break;
         case VideoEventType.bufferingStart:
           value = value.copyWith(isBuffering: true);
+          break;
         case VideoEventType.bufferingEnd:
           if (value.isBuffering) {
             value = value.copyWith(isBuffering: false);
           }
-
+          break;
         case VideoEventType.play:
           play();
+          break;
         case VideoEventType.pause:
           pause();
+          break;
         case VideoEventType.seek:
           seekTo(event.position);
+          break;
         case VideoEventType.pipStart:
           value = value.copyWith(isPip: true);
+          break;
         case VideoEventType.pipStop:
           value = value.copyWith(isPip: false);
+          break;
         case VideoEventType.unknown:
+          break;
+        case VideoEventType.tracksChanged:
+          // *** NEW LOG ***
+          developer.log(
+            "=======+++=++++====== video_player.dart: tracksChanged case processed. =======++++===++=",
+            name: "VideoPlayerController",
+          );
           break;
       }
     }

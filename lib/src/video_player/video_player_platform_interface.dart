@@ -365,7 +365,30 @@ class VideoEvent {
   ///
   /// Depending on the [eventType], the [duration], [size] and [buffered]
   /// arguments can be null.
-  VideoEvent({required this.eventType, required this.key, this.duration, this.size, this.buffered, this.position});
+  /// 
+  /// // *** START NEW CODE ***
+  /// Video tracks (qualities)
+  ///
+  /// Only used if [eventType] is [VideoEventType.tracksChanged].
+  final List<Map<dynamic, dynamic>>? videoTracks;
+
+  /// Audio tracks
+  ///
+  /// Only used if [eventType] is [VideoEventType.tracksChanged].
+  final List<Map<dynamic, dynamic>>? audioTracks;
+
+  /// Subtitle tracks
+  ///
+  /// Only used if [eventType] is [VideoEventType.tracksChanged].
+  final List<Map<dynamic, dynamic>>? subtitleTracks;
+  // *** END NEW CODE ***
+
+  VideoEvent({
+    required this.eventType, required this.key, this.duration, this.size, this.buffered, this.position,
+    this.videoTracks, // <-- ADD THIS
+    this.audioTracks, // <-- ADD THIS
+    this.subtitleTracks, // <-- ADD THIS
+    });
 
   /// The type of the event.
   final VideoEventType eventType;
@@ -393,7 +416,7 @@ class VideoEvent {
   ///Seek position
   final Duration? position;
 
-  @override
+ @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       other is VideoEvent &&
@@ -402,10 +425,20 @@ class VideoEvent {
           eventType == other.eventType &&
           duration == other.duration &&
           size == other.size &&
-          listEquals(buffered, other.buffered);
+          listEquals(buffered, other.buffered) &&
+          listEquals(videoTracks, other.videoTracks) && // <-- ADD THIS
+          listEquals(audioTracks, other.audioTracks) && // <-- ADD THIS
+          listEquals(subtitleTracks, other.subtitleTracks); // <-- ADD THIS
 
-  @override
-  int get hashCode => eventType.hashCode ^ duration.hashCode ^ size.hashCode ^ buffered.hashCode;
+ @override
+  int get hashCode =>
+      eventType.hashCode ^
+      duration.hashCode ^
+      size.hashCode ^
+      buffered.hashCode ^
+      videoTracks.hashCode ^ // <-- ADD THIS
+      audioTracks.hashCode ^ // <-- ADD THIS
+      subtitleTracks.hashCode; // <-- ADD THIS
 }
 
 /// Type of the event.
@@ -433,6 +466,9 @@ enum VideoEventType {
 
   /// The video is set to pause
   pause,
+
+  /// Tracks (video, audio, subtitle) have been discovered.
+  tracksChanged, // <-- ADD THIS
 
   /// The video is set to given to position
   seek,

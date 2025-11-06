@@ -6,6 +6,7 @@ import 'package:better_player_plus/src/video_player/video_player_platform_interf
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'dart:developer' as developer;
 
 const MethodChannel _channel = MethodChannel('better_player_channel');
 
@@ -202,78 +203,100 @@ class MethodChannelVideoPlayer extends VideoPlayerPlatform {
       _channel.invokeMethod<void>('stopPreCache', <String, dynamic>{'url': url, 'cacheKey': cacheKey});
 
   @override
-  Stream<VideoEvent> videoEventsFor(int? textureId) =>
-      _eventChannelFor(textureId).receiveBroadcastStream().map((event) {
-        late Map<dynamic, dynamic> map;
-        if (event is Map) {
-          map = event;
+  Stream<VideoEvent> videoEventsFor(int? textureId) => _eventChannelFor(textureId).receiveBroadcastStream().map((
+    event,
+  ) {
+    late Map<dynamic, dynamic> map;
+    if (event is Map) {
+      map = event;
+    }
+    final String? eventType = map['event'] as String?;
+    final String? key = map['key'] as String?;
+    switch (eventType) {
+      case 'initialized':
+        double width = 0;
+        double height = 0;
+
+        try {
+          if (map.containsKey('width')) {
+            final num widthNum = map['width'] as num;
+            width = widthNum.toDouble();
+          }
+          if (map.containsKey('height')) {
+            final num heightNum = map['height'] as num;
+            height = heightNum.toDouble();
+          }
+        } on Exception catch (exception) {
+          BetterPlayerUtils.log(exception.toString());
         }
-        final String? eventType = map['event'] as String?;
-        final String? key = map['key'] as String?;
-        switch (eventType) {
-          case 'initialized':
-            double width = 0;
-            double height = 0;
 
-            try {
-              if (map.containsKey('width')) {
-                final num widthNum = map['width'] as num;
-                width = widthNum.toDouble();
-              }
-              if (map.containsKey('height')) {
-                final num heightNum = map['height'] as num;
-                height = heightNum.toDouble();
-              }
-            } on Exception catch (exception) {
-              BetterPlayerUtils.log(exception.toString());
-            }
+        final Size size = Size(width, height);
 
-            final Size size = Size(width, height);
+        return VideoEvent(
+          eventType: VideoEventType.initialized,
+          key: key,
+          duration: Duration(milliseconds: map['duration'] as int),
+          size: size,
+        );
+      case 'completed':
+        return VideoEvent(eventType: VideoEventType.completed, key: key);
+      case 'bufferingUpdate':
+        final List<dynamic> values = map['values'] as List;
 
-            return VideoEvent(
-              eventType: VideoEventType.initialized,
-              key: key,
-              duration: Duration(milliseconds: map['duration'] as int),
-              size: size,
-            );
-          case 'completed':
-            return VideoEvent(eventType: VideoEventType.completed, key: key);
-          case 'bufferingUpdate':
-            final List<dynamic> values = map['values'] as List;
+        return VideoEvent(
+          eventType: VideoEventType.bufferingUpdate,
+          key: key,
+          buffered: values.map<DurationRange>(_toDurationRange).toList(),
+        );
+      case 'bufferingStart':
+        return VideoEvent(eventType: VideoEventType.bufferingStart, key: key);
+      case 'bufferingEnd':
+        return VideoEvent(eventType: VideoEventType.bufferingEnd, key: key);
 
-            return VideoEvent(
-              eventType: VideoEventType.bufferingUpdate,
-              key: key,
-              buffered: values.map<DurationRange>(_toDurationRange).toList(),
-            );
-          case 'bufferingStart':
-            return VideoEvent(eventType: VideoEventType.bufferingStart, key: key);
-          case 'bufferingEnd':
-            return VideoEvent(eventType: VideoEventType.bufferingEnd, key: key);
+      case 'play':
+        return VideoEvent(eventType: VideoEventType.play, key: key);
 
-          case 'play':
-            return VideoEvent(eventType: VideoEventType.play, key: key);
+      case 'pause':
+        return VideoEvent(eventType: VideoEventType.pause, key: key);
 
-          case 'pause':
-            return VideoEvent(eventType: VideoEventType.pause, key: key);
+      case 'seek':
+        return VideoEvent(
+          eventType: VideoEventType.seek,
+          key: key,
+          position: Duration(milliseconds: map['position'] as int),
+        );
 
-          case 'seek':
-            return VideoEvent(
-              eventType: VideoEventType.seek,
-              key: key,
-              position: Duration(milliseconds: map['position'] as int),
-            );
+      case 'pipStart':
+        return VideoEvent(eventType: VideoEventType.pipStart, key: key);
 
-          case 'pipStart':
-            return VideoEvent(eventType: VideoEventType.pipStart, key: key);
+      case 'pipStop':
+        return VideoEvent(eventType: VideoEventType.pipStop, key: key);
+      // *** THIS IS THE FIX. YOURS MIGHT BE MISSING THE DATA. ***
+      case 'tracksChanged':
+        // Parse the lists from the native event
+        final List<Map<dynamic, dynamic>> videoTracks =
+            (map['videoTracks'] as List<dynamic>?)?.map((track) => track as Map<dynamic, dynamic>).toList() ?? [];
 
-          case 'pipStop':
-            return VideoEvent(eventType: VideoEventType.pipStop, key: key);
+        developer.log('========Method channel Parsed videoTracks : $videoTracks=========');
+        final List<Map<dynamic, dynamic>> audioTracks =
+            (map['audioTracks'] as List<dynamic>?)?.map((track) => track as Map<dynamic, dynamic>).toList() ?? [];
+        developer.log('========Method channel Parsed audio : $audioTracks=========');
+        final List<Map<dynamic, dynamic>> subtitleTracks =
+            (map['subtitleTracks'] as List<dynamic>?)?.map((track) => track as Map<dynamic, dynamic>).toList() ?? [];
+        developer.log('========Method channel Parsed subtitle : $subtitleTracks=========');
 
-          default:
-            return VideoEvent(eventType: VideoEventType.unknown, key: key);
-        }
-      });
+        return VideoEvent(
+          eventType: VideoEventType.tracksChanged,
+          key: key,
+          videoTracks: videoTracks, // <-- Attaching the data
+          audioTracks: audioTracks, // <-- Attaching the data
+          subtitleTracks: subtitleTracks, // <-- Attacting the data
+        );
+      // *** END OF FIX ***
+      default:
+        return VideoEvent(eventType: VideoEventType.unknown, key: key);
+    }
+  });
 
   @override
   Widget buildView(int? textureId) {

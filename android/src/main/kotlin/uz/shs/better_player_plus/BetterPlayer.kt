@@ -76,6 +76,11 @@ import kotlin.math.max
 import kotlin.math.min
 import androidx.core.net.toUri
 
+import androidx.media3.common.Tracks
+import androidx.media3.common.Format
+
+
+
 @UnstableApi
 internal class BetterPlayer(
     context: Context,
@@ -498,6 +503,83 @@ internal class BetterPlayer(
             override fun onPlayerError(error: PlaybackException) {
                 eventSink.error("VideoError", "Video player had error $error", "")
             }
+
+            // *** START OF CORRECTED CODE ***
+            override fun onTracksChanged(tracks: Tracks) {
+                super.onTracksChanged(tracks)
+                Log.d(TAG, "KOTLIN: =============onTracksChanged triggered.==============")
+                val mappedTrackInfo = trackSelector.currentMappedTrackInfo
+                if (mappedTrackInfo == null) {
+                    Log.d(TAG, "========onTracksChanged: MappedTrackInfo is null.=========")
+                    return
+                }
+
+                val videoTracksList = ArrayList<Map<String, Any?>>()
+                val audioTracksList = ArrayList<Map<String, Any?>>()
+                val subtitleTracksList = ArrayList<Map<String, Any?>>()
+
+                
+
+                for (rendererIndex in 0 until mappedTrackInfo.rendererCount) {
+                    val trackGroupArray = mappedTrackInfo.getTrackGroups(rendererIndex)
+                    val trackType = mappedTrackInfo.getRendererType(rendererIndex)
+
+                    if (trackType == C.TRACK_TYPE_VIDEO) {
+                        for (groupIndex in 0 until trackGroupArray.length) {
+                            val group = trackGroupArray.get(groupIndex)
+                            for (trackIndex in 0 until group.length) {
+                                val format = group.getFormat(trackIndex)
+                                val videoTrack = HashMap<String, Any?>()
+                                videoTrack["id"] = "$rendererIndex:$groupIndex:$trackIndex" // A unique ID
+                                videoTrack["width"] = format.width
+                                videoTrack["height"] = format.height
+                                videoTrack["bitrate"] = format.bitrate
+                                videoTracksList.add(videoTrack)
+                            }
+                        }
+                    } else if (trackType == C.TRACK_TYPE_AUDIO) {
+                        for (groupIndex in 0 until trackGroupArray.length) {
+                            val group = trackGroupArray.get(groupIndex)
+                            if (group.length > 0) {
+                                val format = group.getFormat(0) // Representative format
+                                val audioTrack = HashMap<String, Any?>()
+                                // The ID *must* be the groupIndex for `setAudioTrack` to work.
+                                audioTrack["id"] = groupIndex
+                                audioTrack["label"] = format.label
+                                audioTrack["language"] = format.language
+                                audioTrack["bitrate"] = format.bitrate
+                                audioTracksList.add(audioTrack)
+                            }
+                        }
+                    } else if (trackType == C.TRACK_TYPE_TEXT) {
+                        for (groupIndex in 0 until trackGroupArray.length) {
+                            val group = trackGroupArray.get(groupIndex)
+                            if (group.length > 0) {
+                                val format = group.getFormat(0) // Representative format
+                                val subtitleTrack = HashMap<String, Any?>()
+                                subtitleTrack["id"] = groupIndex // Use groupIndex as ID
+                                subtitleTrack["label"] = format.label
+                                subtitleTrack["language"] = format.language
+                                subtitleTracksList.add(subtitleTrack)
+                            }
+                        }
+                    }
+                }
+
+                Log.d(TAG, "KOTLIN: =======Found ${videoTracksList.size} video tracks.=======")
+                Log.d(TAG, "KOTLIN: =======Found ${audioTracksList.size} audio tracks.=======")
+                Log.d(TAG, "KOTLIN: =======Found ${subtitleTracksList.size} subtitle tracks.======")
+
+                // Send the event to Dart
+                val event = HashMap<String, Any>()
+                event["event"] = "tracksChanged" // Custom event name
+                event["videoTracks"] = videoTracksList
+                event["audioTracks"] = audioTracksList
+                event["subtitleTracks"] = subtitleTracksList
+Log.d(TAG, "KOTLIN: ==========Sending 'tracksChanged' event to Dart.============")
+                eventSink.success(event)
+            }
+            // *** END OF CORRECTED CODE ***
         })
         val reply: MutableMap<String, Any> = HashMap()
         reply["textureId"] = textureEntry.id()

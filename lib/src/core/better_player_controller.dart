@@ -10,6 +10,7 @@ import 'package:better_player_plus/src/video_player/video_player_platform_interf
 import 'package:collection/collection.dart' show IterableExtension;
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import 'dart:developer' as developer;
 
 ///Class used to control overall Better Player behavior. Main class to change
 ///state of Better Player.
@@ -237,6 +238,14 @@ class BetterPlayerController {
         bufferingConfiguration: betterPlayerDataSource.bufferingConfiguration,
       );
       videoPlayerController?.addListener(_onVideoPlayerChanged);
+      // *** START FIX ***
+      // Attach the event listener *before* setting the data source.
+      // This is critical to catch early events like 'tracksChanged'.
+      _videoEventStreamSubscription?.cancel();
+      _videoEventStreamSubscription = videoPlayerController?.videoEventStreamController.stream.listen(
+        _handleVideoEvent,
+      );
+      // *** END FIX ***
     }
 
     ///Clear asms tracks
@@ -283,6 +292,17 @@ class BetterPlayerController {
   ///This method configures tracks, subtitles and audio tracks from given
   ///master playlist.
   Future _setupAsmsDataSource(BetterPlayerDataSource source) async {
+    // *** START FIX ***
+    // Don't try to parse DASH in Dart. Let native code handle it.
+    if (betterPlayerDataSource!.videoFormat == BetterPlayerVideoFormat.dash ||
+        BetterPlayerAsmsUtils.isDataSourceDash(betterPlayerDataSource!.url)) {
+      BetterPlayerUtils.log("DASH stream detected. Skipping Dart manifest parse.");
+      // We still need to setup subtitles, but don't parse tracks/audio here.
+      _setupSubtitles();
+      return; // Exit the function
+    }
+    // *** END FIX ***
+
     final String? data = await BetterPlayerAsmsUtils.getDataFromUrl(betterPlayerDataSource!.url, _getHeaders());
     if (data != null) {
       final BetterPlayerAsmsDataHolder response = await BetterPlayerAsmsUtils.parse(data, betterPlayerDataSource!.url);
@@ -498,10 +518,10 @@ class BetterPlayerController {
   ///run on player start.
   Future _initializeVideo() async {
     setLooping(betterPlayerConfiguration.looping);
-    _videoEventStreamSubscription?.cancel();
-    _videoEventStreamSubscription = null;
+    // _videoEventStreamSubscription?.cancel();
+    // _videoEventStreamSubscription = null;
 
-    _videoEventStreamSubscription = videoPlayerController?.videoEventStreamController.stream.listen(_handleVideoEvent);
+    // _videoEventStreamSubscription = videoPlayerController?.videoEventStreamController.stream.listen(_handleVideoEvent);
 
     final fullScreenByDefault = betterPlayerConfiguration.fullScreenByDefault;
     if (betterPlayerConfiguration.autoPlay) {
@@ -698,6 +718,8 @@ class BetterPlayerController {
 
   ///Send player event to all listeners.
   void _postEvent(BetterPlayerEvent betterPlayerEvent) {
+    // *** ADD THIS LOG ***
+    developer.log("DART: Firing _postEvent: $betterPlayerEvent", name: "BetterPlayerController");
     for (final Function(BetterPlayerEvent)? eventListener in _eventListeners) {
       if (eventListener != null) {
         eventListener(betterPlayerEvent);
@@ -1058,6 +1080,15 @@ class BetterPlayerController {
   ///Handle VideoEvent when remote controls notification / PiP is shown
   Future<void> _handleVideoEvent(VideoEvent event) async {
     switch (event.eventType) {
+      case VideoEventType.initialized:
+        developer.log("DART: INITIALIZED _handleVideoEvent received tracksChanged!", name: "BetterPlayerController");
+        // Parse Video Tracks (Qualities)
+        developer.log(
+          "DART:  INITIAL Parsed _betterPlayerAsmsTracks: ${_betterPlayerAsmsTracks.length} tracks",
+          name: "BetterPlayerController",
+        );
+
+        _postEvent(BetterPlayerEvent(BetterPlayerEventType.initialized));
       case VideoEventType.play:
         _postEvent(BetterPlayerEvent(BetterPlayerEventType.play));
       case VideoEventType.pause:
@@ -1086,6 +1117,69 @@ class BetterPlayerController {
         );
       case VideoEventType.bufferingEnd:
         _postEvent(BetterPlayerEvent(BetterPlayerEventType.bufferingEnd));
+
+      // *** START FIX ***
+      case VideoEventType.tracksChanged:
+        BetterPlayerUtils.log("Received tracksChanged event");
+        developer.log("DART: _handleVideoEvent received tracksChanged!", name: "BetterPlayerController");
+        try {
+          // Parse Video Tracks (Qualities)
+          developer.log("DART: Raw videoTracks from native: ${event.videoTracks}", name: "BetterPlayerController");
+          developer.log("DART: Raw audioTracks from native: ${event.audioTracks}", name: "BetterPlayerController");
+
+          if (event.videoTracks != null) {
+            _betterPlayerAsmsTracks = event.videoTracks!.map((track) {
+              return BetterPlayerAsmsTrack(
+                track['id']?.toString() ?? '0',
+                track['width'] ?? 0,
+                track['height'] ?? 0,
+                track['bitrate'] ?? 0,
+                0,
+                null,
+                null,
+              );
+            }).toList();
+            _betterPlayerAsmsTracks.insert(0, BetterPlayerAsmsTrack.defaultTrack());
+          }
+          // Log the result of parsing video
+          developer.log(
+            "DART: Parsed _betterPlayerAsmsTracks: ${_betterPlayerAsmsTracks.length} tracks",
+            name: "BetterPlayerController",
+          );
+          // Parse Audio Tracks
+          if (event.audioTracks != null && event.audioTracks!.isNotEmpty) {
+            _betterPlayerAsmsAudioTracks = event.audioTracks!.map((track) {
+              return BetterPlayerAsmsAudioTrack(id: track['id'], label: track['label'], language: track['language']);
+            }).toList();
+          }
+
+          // Log the result of parsing audio
+          developer.log(
+            "DART: Parsed _betterPlayerAsmsAudioTracks: ${_betterPlayerAsmsAudioTracks?.length ?? 0} tracks",
+            name: "BetterPlayerController",
+          );
+          // Parse Subtitle Tracks
+          if (event.subtitleTracks != null && event.subtitleTracks!.isNotEmpty) {
+            _betterPlayerSubtitlesSourceList.removeWhere((s) => s.type == BetterPlayerSubtitlesSourceType.network);
+
+            final nativeSubtitles = event.subtitleTracks!.map((track) {
+              return BetterPlayerSubtitlesSource(
+                type: BetterPlayerSubtitlesSourceType.network,
+                name: track['label'] ?? track['language'] ?? 'Subtitle ${track['id']}',
+                // language: track['language'],
+              );
+            }).toList();
+            _betterPlayerSubtitlesSourceList.insertAll(0, nativeSubtitles);
+          }
+
+          _postEvent(BetterPlayerEvent(BetterPlayerEventType.changedTrack));
+          // _postControllerEvent(BetterPlayerControllerEvent.play);
+          // _postControllerEvent(BetterPlayerControllerEvent.setupDataSource);
+        } catch (e) {
+          BetterPlayerUtils.log("Error parsing 'tracksChanged' event: $e");
+        }
+        break;
+      // *** END FIX ***
       default:
 
         ///TODO: Handle when needed
@@ -1187,6 +1281,8 @@ class BetterPlayerController {
 
   /// Add controller internal event.
   void _postControllerEvent(BetterPlayerControllerEvent event) {
+    // *** ADD THIS LOG ***
+    developer.log("DART: ------------Firing _postControllerEvent: $event-----------", name: "BetterPlayerController");
     if (!_controllerEventStreamController.isClosed) {
       _controllerEventStreamController.add(event);
     }
