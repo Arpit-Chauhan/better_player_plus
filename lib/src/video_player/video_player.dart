@@ -203,17 +203,7 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
     unawaited(_applyVolume());
 
     void eventListener(VideoEvent event) {
-      // *** NEW LOG ***
-      developer.log(
-        "======== video_player.dart: eventListener received event: ${event.eventType} ==============",
-        name: "VideoPlayerController",
-      );
-
       if (_isDisposed) {
-        developer.log(
-          "============ video_player.dart: isDisposed. Ignoring event.====================",
-          name: "VideoPlayerController",
-        );
         return;
       }
 
@@ -230,12 +220,6 @@ class VideoPlayerController extends ValueNotifier<VideoPlayerValue> {
       }
 
       videoEventStreamController.add(event);
-
-      // *** NEW LOG ***
-      developer.log(
-        "============video_player.dart: Event added to stream. Processing switch.=============",
-        name: "VideoPlayerController",
-      );
 
       switch (event.eventType) {
         case VideoEventType.initialized:

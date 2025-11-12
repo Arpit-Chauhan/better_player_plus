@@ -718,8 +718,6 @@ class BetterPlayerController {
 
   ///Send player event to all listeners.
   void _postEvent(BetterPlayerEvent betterPlayerEvent) {
-    // *** ADD THIS LOG ***
-    developer.log("DART: Firing _postEvent: $betterPlayerEvent", name: "BetterPlayerController");
     for (final Function(BetterPlayerEvent)? eventListener in _eventListeners) {
       if (eventListener != null) {
         eventListener(betterPlayerEvent);
@@ -1081,7 +1079,6 @@ class BetterPlayerController {
   Future<void> _handleVideoEvent(VideoEvent event) async {
     switch (event.eventType) {
       case VideoEventType.initialized:
-        developer.log("DART: INITIALIZED _handleVideoEvent received tracksChanged!", name: "BetterPlayerController");
         // Parse Video Tracks (Qualities)
         developer.log(
           "DART:  INITIAL Parsed _betterPlayerAsmsTracks: ${_betterPlayerAsmsTracks.length} tracks",

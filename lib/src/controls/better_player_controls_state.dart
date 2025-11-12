@@ -277,7 +277,10 @@ abstract class BetterPlayerControlsState<T extends StatefulWidget> extends State
     final int height = track.height ?? 0;
     final int bitrate = track.bitrate ?? 0;
     final String mimeType = (track.mimeType ?? '').replaceAll('video/', '');
-    final String trackName = preferredName ?? '${width}x$height ${BetterPlayerUtils.formatBitrate(bitrate)} $mimeType';
+    // final String trackName = preferredName ?? '${width}x$height ${BetterPlayerUtils.formatBitrate(bitrate)} $mimeType';
+    
+    // Representing quality only by height for similar representation as youtube qualities
+    final String trackName = preferredName ?? '${height}p';
 
     final BetterPlayerAsmsTrack? selectedTrack = betterPlayerController!.betterPlayerAsmsTrack;
     final bool isSelected = selectedTrack != null && selectedTrack == track;
