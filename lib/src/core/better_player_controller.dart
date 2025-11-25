@@ -12,6 +12,8 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:developer' as developer;
 
+import 'package:wakelock_plus/wakelock_plus.dart';
+
 ///Class used to control overall Better Player behavior. Main class to change
 ///state of Better Player.
 class BetterPlayerController {
@@ -567,6 +569,20 @@ class BetterPlayerController {
   void exitFullScreen() {
     _isFullScreen = false;
     _postControllerEvent(BetterPlayerControllerEvent.hideFullscreen);
+
+    // --- START FIX ---
+    // The Back Button / Route Pop triggers a System UI reset which disables the Wakelock.
+    // We wait then force the Wakelock back ON.
+    if (betterPlayerConfiguration.allowedScreenSleep == false) {
+      Future.delayed(const Duration(milliseconds: 3000), () {
+        // Check if the controller is still mounted and playing
+        if (videoPlayerController != null && 
+            (videoPlayerController!.value.isPlaying == true)) {
+          WakelockPlus.enable();
+        }
+      });
+    }
+    // --- END FIX ---
   }
 
   ///Enables/disables full screen mode based on current fullscreen state.
